@@ -1,0 +1,16 @@
+seed: 0
+model: "vicuna-small.bin"
+temp: 0.1
+n_predict: 256
+top_k: 40
+top_p: 0.95
+repeat_penalty: 1.3
+repeat_last_n: 64
+ctx_size: 512
+debug: false
+host: "localhost"
+port: 50051
+threads: 8
+redis_host: "192.168.254.85"
+redis_port: 6379
+redis_db: 1

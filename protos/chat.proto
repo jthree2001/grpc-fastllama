@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package chat;
+
+message Chat {
+    int32 id = 1;
+    string title = 2;
+}
+
+message ChatMessage {
+    string id = 1;
+    string message = 2;
+}
+
+message GetAllChatsRequest {
+    optional string filter_by_id = 1;
+}
+
+message GetAllChatsResponse {
+    repeated Chat chats = 1;
+}
+
+message GetChatRequest {
+    string id = 1;
+}
+
+message GetChatResponse {
+    string id = 1;
+    repeated ChatMessage message = 2;
+}
+
+message CreateChatRequest {
+    Chat chat = 1;
+}
+
+message CreateChatResponse {
+    Chat chat = 1;
+}
+
+message DeleteChatRequest {
+    string id = 1;
+}
+
+message DeleteChatResponse {}
+
+message SendChatMessageRequest {
+    string chat_id = 1;
+    string callback_url = 2;
+    string message = 3;
+}
+
+message SendChatMessageResponse {
+    string message = 1;
+}
+
+service ChatService {
+    rpc GetAllChats (GetAllChatsRequest) returns (GetAllChatsResponse) {}
+    rpc CreateChat (CreateChatRequest) returns (CreateChatResponse) {}
+    rpc GetChat (GetChatRequest) returns (GetChatResponse) {}
+    rpc DeleteChat (DeleteChatRequest) returns (DeleteChatResponse) {}
+    rpc SendChatMessage (SendChatMessageRequest) returns (SendChatMessageResponse) {}
+}
