@@ -1,9 +1,8 @@
 grpcio
 grpcio-tools
 futures
-torch==2.0.0
-py-cpuinfo==9.0.0
-git+https://github.com/huggingface/transformers.git
-git+https://github.com/huggingface/peft.git
 rq
 pyyaml
+langchain
+llama-cpp-python
+requests

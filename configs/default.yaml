@@ -1,5 +1,5 @@
 seed: 0
-model: "vicuna-small.bin"
+model: "./models/vicuna-small.bin"
 temp: 0.1
 n_predict: 256
 top_k: 40

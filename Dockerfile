@@ -1,4 +1,4 @@
-FROM jthree2001/gpt4all-rpc:alpha-worker
+FROM python:3.10
 
 WORKDIR /srv
 COPY ./requirements.txt .
@@ -11,6 +11,7 @@ COPY ./config.py /srv/config.py
 COPY ./chats.py /srv/chats.py
 COPY ./protos /srv/protos
 
+COPY ./streamer /srv/streamer
 # COPY ./models /srv/models  # Mounting model is more efficient
 # CMD ["python", "app.py", "--host", "0.0.0.0", "--port", "9600", "--db_path", "data/database.db"]
 CMD ["python", "main.py"]

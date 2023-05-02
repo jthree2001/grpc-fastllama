@@ -1,15 +1,15 @@
-FROM jthree2001/gpt4all-rpc:alpha-worker
+FROM python:3.10
 
 # WORKDIR /srv
 COPY ./requirements.txt .
 
-# RUN python3 -m venv venv && . venv/bin/activate
-# RUN python3 -m pip install --no-cache-dir -r requirements.txt --upgrade pip
+RUN python3 -m venv venv && . venv/bin/activate
+RUN python3 -m pip install --no-cache-dir -r requirements.txt --upgrade pip
 
-# RUN apt-get update \
-#  && DEBIAN_FRONTEND=noninteractive \
-#     apt-get install --no-install-recommends --assume-yes \
-#       protobuf-compiler
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive \
+    apt-get install --no-install-recommends --assume-yes \
+      protobuf-compiler
 # COPY ./models /srv/models  # Mounting model is more efficient
 # CMD ["python", "app.py", "--host", "0.0.0.0", "--port", "9600"]
 

@@ -76,7 +76,7 @@ if __name__ == '__main__':
     parser.add_argument("--threads", type=int, default=None, help="How many threads to use")
     parser.add_argument("--redis_host", type=str, default="192.168.254.85", help="Redis Host for rq")
     parser.add_argument("--redis_port", type=int, default=6379, help="Redis Port for rq")
-    parser.add_argument("--redis_db", type=int, default=0, help="Redis Database for data separation")
+    parser.add_argument("--redis_db", type=int, default=1, help="Redis Database for data separation")
     parser.set_defaults(debug=False)
     args = parser.parse_args()
     config_file_path = "configs/default.yaml"

@@ -1,19 +1,38 @@
-from fastLLaMa import Model
 import gc
 import json
 import requests
 import os.path
+from langchain.llms import LlamaCpp
+from langchain import PromptTemplate
+from langchain.chains import ConversationChain
+from streamer.endpointstreaming import EndpointStreaming
+from langchain.memory import RedisChatMessageHistory, ConversationBufferWindowMemory
 
 class ChatbotInstance():
-    def create_chatbot(self):
-        return Model(
-            path=f"./models/{self.config['model']}", #path to model
-            num_threads=self.config['threads'], #number of threads to use
-            n_ctx=self.config['ctx_size'], #context size of model
+    def create_chatbot(self, call_back_url):
+        return LlamaCpp(
+            model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config['model'])], streaming=True,
+            stop=["###"],
+            n_threads=self.config['threads'],
+            n_ctx=2048,
+            use_mlock=True
         )
     def prepare_a_new_chatbot(self):
         self.chatbot_bindings = self.create_chatbot()
         self.condition_chatbot()
+
+    def deka_prompt(self):
+        template = """ The following is a friendly conversation between a human and an AI named Deka. A kind and helpful AI bot built to help users solve problems.
+        Deka is talkative and provides lots of specific details from its context. If Deka does not know the answer to a question, it truthfully says it does not know.
+
+        Current conversation:
+        {history}
+        ### Human: {input}
+        ### Assistant:"""
+
+        return PromptTemplate(
+            input_variables=["history", "input"], template=template
+        )
 
     def condition_chatbot(self, conditionning_message = """
 Instruction: Act as Deka. A kind and helpful AI bot built to help users solve problems.
@@ -22,32 +41,14 @@ Deka: Welcome! I'm here to assist you with anything you need. What can I do for 
 
         response = self.chatbot_bindings.ingest(conditionning_message, is_system_prompt=True)
         file_name = "session-"+ str(self.id)
-    
-    def generate_message(self):
-        gc.collect()
-
-        reply = self.chatbot_bindings.generate(
-            self.prompt_message,#self.full_message,#self.current_message,
-            n_predict=len(self.current_message)+self.config['n_predict'],
-            temp=self.config['temp'],
-            top_k=self.config['top_k'],
-            top_p=self.config['top_p'],
-            repeat_penalty=self.config['repeat_penalty'],
-            repeat_last_n = self.config['repeat_last_n'],
-            #seed=self.config['seed'],
-            n_threads=self.config['threads']
-        )
-        # reply = self.chatbot_bindings.generate(self.full_message, n_predict=55)
-        self.generating=False
-        return reply
-    def save(self):
-        file_name = "models/session-"+ str(self.id)+".bin"
-        self.chatbot_bindings.save_state(file_name)
+        
+    def save(self, human, response):
+        self.memory.add_user_message(human)
+        self.memory.add_ai_message(response)
     
     def load(self):
-        file_name = "models/session-"+ str(self.id)+".bin"
-        if os.path.isfile(file_name):
-            self.chatbot_bindings.load_state(file_name)
+        # NOTE(Michael): redis url strut redis://localhost:6379/0
+        self.memory = RedisChatMessageHistory(key_prefix="ChatMemory:", session_id=str(self.id), ttl=21600, url="redis://"+self.config["redis_host"]+":"+str(self.config["redis_port"])+"/"+str(self.config["redis_db"]))
 
     def __init__(self, id, config:dict) -> None:
         # workaround for non interactive mode
@@ -56,7 +57,6 @@ Deka: Welcome! I'm here to assist you with anything you need. What can I do for 
 
     @staticmethod
     def condition_in_worker(id, config):
-        gc.collect()
         chat = ChatbotInstance(id, config)
         chat.chatbot_bindings = chat.create_chatbot()
 
@@ -66,63 +66,20 @@ Deka: Welcome! I'm here to assist you with anything you need. What can I do for 
 
     @staticmethod
     def generate_in_worker(id, config, call_back_url, message):
-        gc.collect()
         chat = ChatbotInstance(id, config)
-        chat.chatbot_bindings = chat.create_chatbot()
+
+        chat.chatbot_bindings = chat.create_chatbot(call_back_url)
         chat.load()
 
-        res = chat.chatbot_bindings.ingest(message)
-        print("--------------------")
-        print(res)
-        reply = ""
-        flush = ""
-
-        def send_to_callback(message):
-            data = {
-            "message": message
-            }
-
-            json_data = json.dumps(data)
-
-            headers = {"Content-Type": "application/json"}
-            nonlocal call_back_url
-            response = requests.post(call_back_url, data=json_data, headers=headers)
-            if response.status_code == 200:
-                print("Message sent successfully!")
-            else:
-                print("Error occurred: ", response.text)
-        def stream_token(x: str) -> None:
-            """
-            This function is called by the llama library to stream tokens
-            """
-            nonlocal reply
-            nonlocal flush
-            flush = flush + x
-            print(x, end='', flush=True)
-            if '\n' in flush:
-                if flush.count("```") != 1:
-                    # Note(Michael): just to double check we're not in a code block
-                    send_to_callback(flush)
-                    reply = reply + flush
-                    flush = ""
+        conversation = ConversationChain(
+                        prompt=chat.deka_prompt(),
+                        llm=chat.chatbot_bindings, 
+                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=self.memory, human_prefix="### Human:", ai_prefix="### Assistant:", k=2)
+                    )
         
-        generation_done = chat.chatbot_bindings.generate(
-            num_tokens=500, 
-            top_p=0.95, #top p sampling (Optional)
-            temp=0.8, #temperature (Optional)
-            repeat_penalty=1.0, #repetition penalty (Optional)
-            streaming_fn=stream_token, #streaming function
-            stop_words=["###"] #stop generation when this word is encountered (Optional)
-            )
-        
-        if not flush in reply:
-            send_to_callback(flush)
-            reply = reply + flush
-            flush = ""
+        response = conversation.predict(input=message)
 
-        print("=========================1")
-        print(reply)
-        print(generation_done)
+        print("=========================")
+        print(response)
 
-        chat.save()
-        gc.collect()
+        chat.save(message, response)
