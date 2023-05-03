@@ -18,7 +18,7 @@ class FastLLamaGRPC(chat_pb2_grpc.ChatServiceServicer):
 
     def SendChatMessage(self, request, context):
         print("Reciving chat message")
-        enqueue_message = self.queue.enqueue(ChatbotInstance.generate_in_worker, request.chat_id, self.config, request.callback_url, request.message, job_timeout=300)
+        enqueue_message = self.queue.enqueue(ChatbotInstance.generate_in_worker, request.chat_id, self.config, request.callback_url, request.message, job_timeout=self.config["job_timeout"])
         print(enqueue_message)
         print("Enqueued chat message")
         reply = "Results will be sent async"
@@ -76,7 +76,8 @@ if __name__ == '__main__':
     parser.add_argument("--threads", type=int, default=None, help="How many threads to use")
     parser.add_argument("--redis_host", type=str, default="192.168.254.85", help="Redis Host for rq")
     parser.add_argument("--redis_port", type=int, default=6379, help="Redis Port for rq")
-    parser.add_argument("--redis_db", type=int, default=1, help="Redis Database for data separation")
+    parser.add_argument("--redis_db", type=int, default=0, help="Redis Database for data separation")
+    parser.add_argument("--job_timeout", type=int, default=500, help="Worker Timeout")
     parser.set_defaults(debug=False)
     args = parser.parse_args()
     config_file_path = "configs/default.yaml"

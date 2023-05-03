@@ -2,14 +2,19 @@ import gc
 import json
 import requests
 import os.path
+import langchain
 from langchain.llms import LlamaCpp
 from langchain import PromptTemplate
 from langchain.chains import ConversationChain
 from streamer.endpointstreaming import EndpointStreaming
 from langchain.memory import RedisChatMessageHistory, ConversationBufferWindowMemory
+from redis import Redis
+from langchain.cache import RedisCache
+
 
 class ChatbotInstance():
     def create_chatbot(self, call_back_url):
+        langchain.llm_cache = RedisCache(redis_=Redis(host=self.config["redis_host"], port=self.config["redis_port"], db=self.config["redis_db"]))
         return LlamaCpp(
             model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config['model'])], streaming=True,
             stop=["###"],
@@ -74,7 +79,7 @@ Deka: Welcome! I'm here to assist you with anything you need. What can I do for 
         conversation = ConversationChain(
                         prompt=chat.deka_prompt(),
                         llm=chat.chatbot_bindings, 
-                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=self.memory, human_prefix="### Human:", ai_prefix="### Assistant:", k=2)
+                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=chat.memory, human_prefix="### Human:", ai_prefix="### Assistant:", k=2)
                     )
         
         response = conversation.predict(input=message)
