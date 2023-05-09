@@ -1,0 +1,10 @@
+version: '3'
+services:
+  grpc:
+    build:
+      target: /home/mlawson/Workspace/gpt_workspace/grpc-fastllama/.devcontainer/Dockerfile
+    container_name: grpc-dev
+    ports:
+      - '50051:50051'
+    devices:
+      - '/dev/dri:/dev/dri'

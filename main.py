@@ -2,7 +2,7 @@ import grpc
 import argparse
 from config import load_config
 from concurrent import futures
-import protos.chat_pb2 as chat_pb2
+import chat_pb2 as chat_pb2
 import protos.chat_pb2_grpc as chat_pb2_grpc
 from google.protobuf import json_format
 from redis import Redis
@@ -30,6 +30,14 @@ class FastLLamaGRPC(chat_pb2_grpc.ChatServiceServicer):
         new_chat.prepare_a_new_chatbot()
         return chat_pb2.CreateChatResponse(chat=chat_pb2.Chat(id=new_chat.id(), title=new_chat.title()))
 
+    def SendChainMessage(self, request, context):
+        print("Reciving chat message")
+        enqueue_message = self.queue.enqueue(ChatbotInstance.chain_in_worker, request.chat_id, self.config, request.callback_url, request.message, job_timeout=self.config["job_timeout"])
+        print(enqueue_message)
+        print("Enqueued chat message")
+        reply = "Results will be sent async"
+        return chat_pb2.SendChatMessageResponse(message=reply)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Start the chatbot Flask app.")
     parser.add_argument(
@@ -38,6 +46,9 @@ if __name__ == '__main__':
 
     parser.add_argument(
         "-m", "--model", type=str, default=None, help="Force using a specific model."
+    )
+    parser.add_argument(
+        "-em", "--embedd_model", type=str, default=None, help="Force using a specific model for embedded LLM worker."
     )
     parser.add_argument(
         "--temp", type=float, default=None, help="Temperature parameter for the model."
@@ -76,8 +87,8 @@ if __name__ == '__main__':
     parser.add_argument("--threads", type=int, default=None, help="How many threads to use")
     parser.add_argument("--redis_host", type=str, default="192.168.254.85", help="Redis Host for rq")
     parser.add_argument("--redis_port", type=int, default=6379, help="Redis Port for rq")
-    parser.add_argument("--redis_db", type=int, default=0, help="Redis Database for data separation")
-    parser.add_argument("--job_timeout", type=int, default=500, help="Worker Timeout")
+    parser.add_argument("--redis_db", type=int, default=1, help="Redis Database for data separation")
+    parser.add_argument("--job_timeout", type=int, default=1800, help="Worker Timeout")
     parser.set_defaults(debug=False)
     args = parser.parse_args()
     config_file_path = "configs/default.yaml"

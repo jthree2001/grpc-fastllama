@@ -6,3 +6,5 @@ pyyaml
 langchain
 llama-cpp-python
 requests
+duckduckgo-search
+wikipedia

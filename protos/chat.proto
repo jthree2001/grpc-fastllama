@@ -54,9 +54,7 @@ message SendChatMessageResponse {
 }
 
 service ChatService {
-    rpc GetAllChats (GetAllChatsRequest) returns (GetAllChatsResponse) {}
-    rpc CreateChat (CreateChatRequest) returns (CreateChatResponse) {}
-    rpc GetChat (GetChatRequest) returns (GetChatResponse) {}
     rpc DeleteChat (DeleteChatRequest) returns (DeleteChatResponse) {}
     rpc SendChatMessage (SendChatMessageRequest) returns (SendChatMessageResponse) {}
+    rpc SendChainMessage (SendChatMessageRequest) returns (SendChatMessageResponse) {}
 }
