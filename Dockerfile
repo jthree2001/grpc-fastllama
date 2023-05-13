@@ -10,6 +10,7 @@ COPY ./main.py /srv/main.py
 COPY ./config.py /srv/config.py
 COPY ./chats.py /srv/chats.py
 COPY ./protos /srv/protos
+COPY ./chat_pb2.py /srv/chat_pb2.py
 
 COPY ./streamer /srv/streamer
 # COPY ./models /srv/models  # Mounting model is more efficient

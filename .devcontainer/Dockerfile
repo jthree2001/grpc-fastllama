@@ -1,5 +1,5 @@
-# FROM python:3.10
-FROM docker.io/rocm/pytorch
+FROM python:3.10
+# FROM docker.io/rocm/pytorch
 
 # WORKDIR /srv
 COPY ./requirements.txt .

@@ -1,5 +1,6 @@
 seed: 0
-model: "./models/vicuna-small.bin"
+model: "api"
+model_api_endpoint: "192.168.254.11:5000"
 embedd_model: "./models/vicuna-7B-GPTQ-4bit-128g.pt"
 temp: 0.1
 n_predict: 256

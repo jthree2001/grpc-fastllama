@@ -13,6 +13,7 @@ from typing import List, Union
 from langchain.schema import AgentAction, AgentFinish
 from langchain.tools import DuckDuckGoSearchRun
 from langchain.utilities import WikipediaAPIWrapper
+from custom.txtgenllm import TxtGenLlm
 import re
 
 class CustomOutputParser(AgentOutputParser):
@@ -53,21 +54,36 @@ class CustomOutputParser(AgentOutputParser):
         return AgentAction(tool=action, tool_input=action_input.strip(" ").strip('"'), log=llm_output)
 class ChatbotInstance():
     def create_chatbot(self, call_back_url):
-        return LlamaCpp(
-            model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config)], streaming=True,
-            stop=["###","</s>"],
-            n_threads=self.config['threads'],
-            n_ctx=2048,
-            use_mlock=True
-        )
+        if self.config['model'] == "api":
+            return TxtGenLlm(
+                api_endpoint=self.config['model_api_endpoint'],
+                verbose=True,
+                stop=["###","</s>"],
+                callbacks=[EndpointStreaming(call_back_url, self.config)]
+            )
+        else:
+            return LlamaCpp(
+                model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config)], streaming=True,
+                stop=["###","</s>"],
+                n_threads=self.config['threads'],
+                n_ctx=2048,
+                use_mlock=True
+            )
         
     def create_chain_catbot(self, call_back_url):
-        return LlamaCpp(
-            model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config)], streaming=True,
-            n_threads=self.config['threads'],
-            n_ctx=2048,
-            use_mlock=True
-        )
+        if self.config['model'] == "api":
+            return TxtGenLlm(
+                api_endpoint=self.config['model_api_endpoint'],
+                verbose=True,
+                callbacks=[EndpointStreaming(call_back_url, self.config)]
+            )
+        else:
+            return LlamaCpp(
+                model_path=f"{self.config['model']}", verbose=True, callbacks=[EndpointStreaming(call_back_url, self.config)], streaming=True,
+                n_threads=self.config['threads'],
+                n_ctx=2048,
+                use_mlock=True
+            )
 
     def prepare_a_new_chatbot(self):
         self.chatbot_bindings = self.create_chatbot()
@@ -122,17 +138,18 @@ Question: {input}
     @staticmethod
     def generate_in_worker(id, config, call_back_url, message):
         chat = ChatbotInstance(id, config)
+        endpoint = EndpointStreaming(call_back_url, config)
 
         chat.chatbot_bindings = chat.create_chatbot(call_back_url)
         chat.load()
 
         template = """ The following is a friendly conversation between a human and an AI named Deka. A kind and helpful AI bot built to help users solve problems.
-        Deka is talkative and provides lots of specific details from its context. If Deka does not know the answer to a question, it truthfully says it does not know.
+Deka is talkative and provides lots of specific details from its context. If Deka does not know the answer to a question, it truthfully says it does not know.
 
-        Current conversation:
-        {history}
-        ### Human: {input}
-        ### Assistant:"""
+Current conversation:
+{history}
+### Human: {input}
+### Assistant:"""
 
         prompt = PromptTemplate(
             input_variables=["history", "input"], template=template
@@ -146,13 +163,16 @@ Question: {input}
                     )
         
         response = conversation.predict(input=message)
+        print("==================")
         print(response)
+        endpoint.send_to_callback(response)
 
         chat.save(message, response)
 
     @staticmethod
     def chain_in_worker(id, config, call_back_url, message):
         chat = ChatbotInstance(id, config)
+        endpoint = EndpointStreaming(call_back_url, config)
 
         chat.chatbot_bindings = chat.create_chain_catbot(call_back_url)
         chat.load()
@@ -194,7 +214,7 @@ Question: {input}
         agent = LLMSingleActionAgent(
             llm_chain=LLMChain(llm=chat.chatbot_bindings, prompt=chat.deka_prompt()) , 
             output_parser=output_parser,
-            stop=["\nObservation:", "</s>"], 
+            stop=["\nObservation:", "</s>", "###"], 
             allowed_tools=tool_names,
             max_iterations=3, early_stopping_method="generate"
         )
@@ -206,5 +226,6 @@ Question: {input}
 
         print("=========================")
         print(response)
+        endpoint.send_to_callback(response)
 
         chat.save(message, response)

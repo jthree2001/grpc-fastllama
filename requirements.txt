@@ -8,3 +8,4 @@ llama-cpp-python
 requests
 duckduckgo-search
 wikipedia
+langchain-llm-api
