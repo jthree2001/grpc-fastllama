@@ -4,18 +4,26 @@ import requests
 import os.path
 import langchain
 from langchain.llms import LlamaCpp
-from langchain import PromptTemplate, LLMChain
+from langchain import PromptTemplate, LLMChain, LLMMathChain
 from langchain.chains import ConversationChain
 from streamer.endpointstreaming import EndpointStreaming
 from langchain.memory import RedisChatMessageHistory, ConversationBufferWindowMemory, ReadOnlySharedMemory
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from typing import List, Union
 from langchain.schema import AgentAction, AgentFinish
-from langchain.tools import DuckDuckGoSearchRun
-from langchain.utilities import WikipediaAPIWrapper
+from langchain.utilities import WikipediaAPIWrapper, SearxSearchWrapper
 from custom.txtgenllm import TxtGenLlm
+from custom.dekaexecutor import DekaExecutor
+from typing import Tuple
 import re
 
+class RetryTool():
+    log: str
+    tool: str
+    def __init__(self, log, tool):
+        super().__init__()
+        self.log = log
+        self.tool = tool
 class CustomOutputParser(AgentOutputParser):
     tool_names=[]
 
@@ -37,14 +45,20 @@ class CustomOutputParser(AgentOutputParser):
                 log=llm_output,
             )
         # Parse out the action and action input
-        regex = r"Action\s*\d*\s*:(.*?)\nAction\s*\d*\s*Input\s*\d*\s*:[\s]*(.*)"
-        match = re.search(regex, llm_output, re.DOTALL)
-        if not match:
+        # regex = r"Action\s*\d*\s*:(.*?)\nAction\s*\d*\s*Input\s*\d*\s*:[\s]*(.*)"
+        action = [line.removeprefix('Action:') for line in llm_output.split('\n') if "Action:" in line]
+        if not action:
             print("No valid command found, returning blank string")
             return ""
             # raise ValueError(f"Could not parse LLM output: `{llm_output}`")
-        action = match.group(1).strip()
-        action_input = match.group(2)
+        action = action[0]
+        action_input = [line.removeprefix('Action Input:') for line in llm_output.split('\n') if "Action Input:" in line]
+        if not action_input:
+            action_input = ""
+        else:
+            action_input = action_input[0]
+        action_input = action_input.split("Observation:")[0]
+        
         for tool in self.tool_names:
             if tool.lower() in action.lower():
                 action = tool
@@ -52,6 +66,7 @@ class CustomOutputParser(AgentOutputParser):
         print("Executing: "+action + " do: "+action_input)
         print("=========================")
         return AgentAction(tool=action, tool_input=action_input.strip(" ").strip('"'), log=llm_output)
+
 class ChatbotInstance():
     def create_chatbot(self, call_back_url):
         if self.config['model'] == "api":
@@ -75,6 +90,7 @@ class ChatbotInstance():
             return TxtGenLlm(
                 api_endpoint=self.config['model_api_endpoint'],
                 verbose=True,
+                stop=["Observation:", "</s>", "###", "\nObservation:"],
                 callbacks=[EndpointStreaming(call_back_url, self.config)]
             )
         else:
@@ -97,29 +113,49 @@ class ChatbotInstance():
             input_variables=["chat_history", "input"], template=template
         )
 
-    def deka_prompt(self):
-        template = template = """Answer the following questions as best you can. You have access to the following tools:
-
-{tools}
-
-Try to stay on topic of the question, after you know the answer, reply with "Final Answer:."
-Remember that Action should always be one of these tools [{tool_names}].
+    def deka_prompt(self, tools_object):
+        template = """Answer the following Input as best you can. You have access to the following tools: \n"""
+        for value in tools_object:
+            template = template + f"{value.name}, {value.description}. \n"
+        template = template + """\nTry to stay on topic of the Input, after you know the answer, reply with "Final Answer:."
+`Action Input:` must follow by the action.
 Use the following format:
 
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
+Input: the input question or task you must answer
+ASSISTANT:  think about what to do
+Action: should be one of [{tool_names}]
+Action Input: the input to the action above
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat up to 2 times)
-Thought: I now know the final answer
+ASSISTANT: I now know the final answer
 Final Answer: the final answer to the original input question
 
-Question: {input}
+Input: Who is the Atlanta Football team?
+ASSISTANT:  I should use Search.
+Action: Search
+Action Input: Who is the Atlanta Football team?
+Observation: The Atlanta Falcons are a professional American football team based in Atlanta.
+ASSISTANT: I now know the final answer
+Final Answer: The Atlanta Falcons are a professional American football team based in Atlanta.
+
+Input: What is Jus Soli?
+ASSISTANT:  I should use Wikipedia.
+Action: Wikipedia
+Action Input: History of Savanah Georgia
+Observation: Page: Jus soli
+Summary: Jus soli (English:  juss SOH-ly,  yooss SOH-lee), commonly referred to as birthright citizenship, is the right of anyone born in the territory of a state to nationality or citizenship.Jus soli was part of the English common law, in contrast to jus sanguinis, which derives from the Roman law that influenced the civil-law systems of mainland Europe.Jus soli is the predominant rule in the Americas; explanations for this geographical phenomenon include: the establishment of lenient laws by past European colonial powers to entice immigrants from the Old World and displace native populations in the New World, along with the emergence of successful Latin American independence movements that widened the definition and granting of citizenship, as a prerequisite to the abolishment of slavery since the 19th century. Outside the Americas, however, jus soli is rare. Since the Twenty-seventh Amendment of the Constitution of Ireland was enacted in 2004, no European country grants citizenship based on unconditional or near-unconditional jus soli.Almost all states in Europe, Asia, Africa and Oceania grant citizenship at birth based upon the principle of jus sanguinis ("right of blood"), in which citizenship is inherited through parents rather than birthplace, or a restricted version of jus soli in which citizenship by birthplace is automatic only for the children of certain immigrants.
+ASSISTANT: I now know the final answer
+Final Answer: us soli refers to the legal principle whereby individuals are considered citizens of the country in which they were born, regardless of their ancestry or the status of their parents.
+
+Input: Who founded new york?
+ASSISTANT: I already know this one.
+Final Answer: The Italian Giovanni da Verrazzano founded New York in 1524
+
+Input: {input}
 {agent_scratchpad}"""
 
         return PromptTemplate(
-            input_variables=["tools", "tool_names", "input", "agent_scratchpad"], template=template
+            input_variables=["tool_names", "input", "agent_scratchpad"], template=template
         )
 
     def save(self, human, response):
@@ -148,8 +184,8 @@ Deka is talkative and provides lots of specific details from its context. If Dek
 
 Current conversation:
 {history}
-### Human: {input}
-### Assistant:"""
+USER: {input}
+ASSISTANT:"""
 
         prompt = PromptTemplate(
             input_variables=["history", "input"], template=template
@@ -159,7 +195,7 @@ Current conversation:
         conversation = ConversationChain(
                         prompt=prompt,
                         llm=chat.chatbot_bindings, 
-                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=chat.memory, human_prefix="### Human:", ai_prefix="### Assistant:", k=2)
+                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2)
                     )
         
         response = conversation.predict(input=message)
@@ -177,7 +213,7 @@ Current conversation:
         chat.chatbot_bindings = chat.create_chain_catbot(call_back_url)
         chat.load()
 
-        readonlymemory = ReadOnlySharedMemory(memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="### Human:", ai_prefix="### Assistant:"))
+        readonlymemory = ReadOnlySharedMemory(memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::"))
         summry_chain = LLMChain(
             llm=chat.chatbot_bindings, 
             prompt=chat.deka_prompt_summary(), 
@@ -185,42 +221,52 @@ Current conversation:
             memory=readonlymemory, # use the read-only memory to prevent the tool from modifying the memory
         )
 
-        search = DuckDuckGoSearchRun()
+        search = SearxSearchWrapper(searx_host="http://192.168.254.85:8089", unsecure=True)
         wikipedia = WikipediaAPIWrapper()
-        tools = [Tool(
+        llm_math = LLMMathChain.from_llm(chat.chatbot_bindings, verbose=True)
+
+        tools = [
+            Tool(
             name = "Search",
             func=search.run,
-            description="useful for when you need to answer questions about current events"
+            description="Useful for when you need to answer questions about current events."
             ),
             Tool(
                 name = "Wikipedia",
                 func=wikipedia.run,
-                description="useful for when you need to answer questions about any topic"
+                description="Useful for when you need to answer questions about any historical topic."
+            ),
+            Tool(
+                name = "Math",
+                func=llm_math.run,
+                description="Userful when you need to do compilcated math problems."
             )
         ]
-        if len(chat.memory.messages) != 0:
-            tools.append(Tool(
-                name = "Summary",
-                func=summry_chain.run,
-                description="useful for when you summarize this conversation. The input to this tool should be a string, representing who will read this summary."
-                )
-            )
+            
+        # if len(chat.memory.messages) != 0:
+        #     tools.append(Tool(
+        #         name = "Summary",
+        #         func=summry_chain.run,
+        #         description="useful for when you summarize previous conversations."
+        #         )
+        #     )
 
         tool_names = [tool.name for tool in tools]
         output_parser = CustomOutputParser(tool_names)
         print("===========Tools Available==============")
         print(tool_names)
-
+        # full_inputs = self.get_full_inputs(intermediate_steps, **kwargs)
         agent = LLMSingleActionAgent(
-            llm_chain=LLMChain(llm=chat.chatbot_bindings, prompt=chat.deka_prompt()) , 
+            llm_chain=LLMChain(llm=chat.chatbot_bindings, prompt=chat.deka_prompt(tools)) , 
             output_parser=output_parser,
-            stop=["\nObservation:", "</s>", "###"], 
+            stop=["Observation:", "</s>", "###", "\nObservation:"], 
             allowed_tools=tool_names,
-            max_iterations=3, early_stopping_method="generate"
+            max_iterations=3, early_stopping_method="generate",
+            memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2)
         )
-        # agent = LLMSingleActionAgent(tools, chat.chatbot_bindings, prompt=chat.deka_prompt(), allowed_tools=tool_names, agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="### Human:", ai_prefix="### Assistant:", k=2))
+        # agent = LLMSingleActionAgent(tools, chat.chatbot_bindings, prompt=chat.deka_prompt(), allowed_tools=tool_names, agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2))
 
-        agent_executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
+        agent_executor = DekaExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
 
         response = agent_executor.run(tools=tools, input=message, tool_names=tool_names, agent_scratchpad="")
 

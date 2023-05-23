@@ -58,6 +58,9 @@ class TxtGenLlm(LLM):
         request =  self._default_params
         request['prompt'] = prompt
         request['stopping_strings'] = stop
+        print("-----------------------")
+        print(prompt)
+        print(stop)
 
         # if self.streaming:
         #     # If streaming is enabled, we use the stream
