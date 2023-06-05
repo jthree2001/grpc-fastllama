@@ -62,17 +62,10 @@ class TxtGenLlm(LLM):
         print(prompt)
         print(stop)
 
-        # if self.streaming:
-        #     # If streaming is enabled, we use the stream
-        #     # method that yields as they are generated
-        #     # and return the combined strings from the first choices's text:
-        #     combined_text_output = ""
-        #     for token in self.stream(prompt=prompt, stop=stop, run_manager=run_manager):
-        #         combined_text_output += token
-        #     return combined_text_output
-        # else:
         response = requests.post(f'http://{self.api_endpoint}/api/v1/generate', json=request)
         if response.status_code == 200:
+            print("------ Reponse -------")
+            print(response.json())
             result = response.json()['results'][0]['text']
             return result
     
@@ -88,14 +81,14 @@ class TxtGenLlm(LLM):
         """Get the default parameters for calling llama_cpp."""
         return {
             'prompt': '',
-            'max_new_tokens': 250,
+            'max_new_tokens': 500,
             'do_sample': True,
-            'temperature': 1.3,
+            'temperature': 0.75,
             'top_p': 0.1,
             'typical_p': 1,
-            'repetition_penalty': 1.18,
+            'repetition_penalty': 1.5,
             'top_k': 40,
-            'min_length': 0,
+            'min_length': 250,
             'no_repeat_ngram_size': 0,
             'num_beams': 1,
             'penalty_alpha': 0,
@@ -106,5 +99,5 @@ class TxtGenLlm(LLM):
             'truncation_length': 2048,
             'ban_eos_token': False,
             'skip_special_tokens': True,
-            'stopping_strings': []
+            'stopping_strings': ["Observation", "\nObservation"]
         }

@@ -106,4 +106,5 @@ if __name__ == '__main__':
     server.add_insecure_port('[::]:'+str(config["port"]))
     server.start()
     print("Ready...")
+    print(config)
     server.wait_for_termination()

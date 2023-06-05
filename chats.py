@@ -48,8 +48,8 @@ class CustomOutputParser(AgentOutputParser):
         # regex = r"Action\s*\d*\s*:(.*?)\nAction\s*\d*\s*Input\s*\d*\s*:[\s]*(.*)"
         action = [line.removeprefix('Action:') for line in llm_output.split('\n') if "Action:" in line]
         if not action:
-            print("No valid command found, returning blank string")
-            return ""
+            print("No valid command found, returning llm string")
+            return llm_output
             # raise ValueError(f"Could not parse LLM output: `{llm_output}`")
         action = action[0]
         action_input = [line.removeprefix('Action Input:') for line in llm_output.split('\n') if "Action Input:" in line]
@@ -90,7 +90,7 @@ class ChatbotInstance():
             return TxtGenLlm(
                 api_endpoint=self.config['model_api_endpoint'],
                 verbose=True,
-                stop=["Observation:", "</s>", "###", "\nObservation:"],
+                stop=["Observation:", "\nObservation:"],
                 callbacks=[EndpointStreaming(call_back_url, self.config)]
             )
         else:
@@ -117,39 +117,26 @@ class ChatbotInstance():
         template = """Answer the following Input as best you can. You have access to the following tools: \n"""
         for value in tools_object:
             template = template + f"{value.name}, {value.description}. \n"
-        template = template + """\nTry to stay on topic of the Input, after you know the answer, reply with "Final Answer:."
-`Action Input:` must follow by the action.
-Use the following format:
+        template = template + """\nUse the following format:
 
 Input: the input question or task you must answer
-ASSISTANT:  think about what to do
+Thought:  think about what to do
 Action: should be one of [{tool_names}]
 Action Input: the input to the action above
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat up to 2 times)
-ASSISTANT: I now know the final answer
+Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-Input: Who is the Atlanta Football team?
-ASSISTANT:  I should use Search.
+The Following is an example:
+
+Input: Who is the Atlanta NFL team?
+Thought: Maybe I should Search to find out
 Action: Search
-Action Input: Who is the Atlanta Football team?
-Observation: The Atlanta Falcons are a professional American football team based in Atlanta.
-ASSISTANT: I now know the final answer
-Final Answer: The Atlanta Falcons are a professional American football team based in Atlanta.
-
-Input: What is Jus Soli?
-ASSISTANT:  I should use Wikipedia.
-Action: Wikipedia
-Action Input: History of Savanah Georgia
-Observation: Page: Jus soli
-Summary: Jus soli (English:  juss SOH-ly,  yooss SOH-lee), commonly referred to as birthright citizenship, is the right of anyone born in the territory of a state to nationality or citizenship.Jus soli was part of the English common law, in contrast to jus sanguinis, which derives from the Roman law that influenced the civil-law systems of mainland Europe.Jus soli is the predominant rule in the Americas; explanations for this geographical phenomenon include: the establishment of lenient laws by past European colonial powers to entice immigrants from the Old World and displace native populations in the New World, along with the emergence of successful Latin American independence movements that widened the definition and granting of citizenship, as a prerequisite to the abolishment of slavery since the 19th century. Outside the Americas, however, jus soli is rare. Since the Twenty-seventh Amendment of the Constitution of Ireland was enacted in 2004, no European country grants citizenship based on unconditional or near-unconditional jus soli.Almost all states in Europe, Asia, Africa and Oceania grant citizenship at birth based upon the principle of jus sanguinis ("right of blood"), in which citizenship is inherited through parents rather than birthplace, or a restricted version of jus soli in which citizenship by birthplace is automatic only for the children of certain immigrants.
-ASSISTANT: I now know the final answer
-Final Answer: us soli refers to the legal principle whereby individuals are considered citizens of the country in which they were born, regardless of their ancestry or the status of their parents.
-
-Input: Who founded new york?
-ASSISTANT: I already know this one.
-Final Answer: The Italian Giovanni da Verrazzano founded New York in 1524
+Action Input: Atlanta NFL team
+Observation: The Atlanta Falcons are a professional American football team based in Atlanta. The Falcons compete in the National Football League (NFL) as a member club of the league's National Football Conference (NFC) South division. The Falcons were founded on June 30, 1965, and joined the NFL in 1966[6] as an expansion team, after the NFL offered then-owner Rankin Smith a franchise to keep him from joining the rival American Football League (AFL). 
+Thought: I now know the final answer
+Final Answer: The Atlanta Falcons are the NFL team in Atlanta.
 
 Input: {input}
 {agent_scratchpad}"""
@@ -195,7 +182,7 @@ ASSISTANT:"""
         conversation = ConversationChain(
                         prompt=prompt,
                         llm=chat.chatbot_bindings, 
-                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2)
+                        memory=ConversationBufferWindowMemory(memory_key="history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT:", k=2)
                     )
         
         response = conversation.predict(input=message)
@@ -213,7 +200,7 @@ ASSISTANT:"""
         chat.chatbot_bindings = chat.create_chain_catbot(call_back_url)
         chat.load()
 
-        readonlymemory = ReadOnlySharedMemory(memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::"))
+        readonlymemory = ReadOnlySharedMemory(memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT:"))
         summry_chain = LLMChain(
             llm=chat.chatbot_bindings, 
             prompt=chat.deka_prompt_summary(), 
@@ -232,15 +219,21 @@ ASSISTANT:"""
             description="Useful for when you need to answer questions about current events."
             ),
             Tool(
+            name = "Google",
+            func=search.run,
+            description="Useful for when you need to answer questions about current events."
+            ),
+            Tool(
                 name = "Wikipedia",
                 func=wikipedia.run,
                 description="Useful for when you need to answer questions about any historical topic."
-            ),
-            Tool(
-                name = "Math",
-                func=llm_math.run,
-                description="Userful when you need to do compilcated math problems."
             )
+            # ),
+            # Tool(
+            #     name = "Math",
+            #     func=llm_math.run,
+            #     description="Userful when you need to do compilcated math problems."
+            # )
         ]
             
         # if len(chat.memory.messages) != 0:
@@ -259,10 +252,10 @@ ASSISTANT:"""
         agent = LLMSingleActionAgent(
             llm_chain=LLMChain(llm=chat.chatbot_bindings, prompt=chat.deka_prompt(tools)) , 
             output_parser=output_parser,
-            stop=["Observation:", "</s>", "###", "\nObservation:"], 
+            stop=["Observation", "\nObservation", "Observations", "\nObservations"], 
             allowed_tools=tool_names,
             max_iterations=3, early_stopping_method="generate",
-            memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2)
+            memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER", ai_prefix="ASSISTANT", k=2)
         )
         # agent = LLMSingleActionAgent(tools, chat.chatbot_bindings, prompt=chat.deka_prompt(), allowed_tools=tool_names, agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=ConversationBufferWindowMemory(memory_key="chat_history", chat_memory=chat.memory, human_prefix="USER:", ai_prefix="ASSISTANT::", k=2))
 
@@ -275,3 +268,7 @@ ASSISTANT:"""
         endpoint.send_to_callback(response)
 
         chat.save(message, response)
+
+if __name__ == '__main__':
+    print("Starting")
+    ChatbotInstance.chain_in_worker(4, {'seed': 0, 'model': 'api', 'model_api_endpoint': '192.168.254.85:5000', 'embedd_model': './models/vicuna-7B-GPTQ-4bit-128g.pt', 'temp': 0.1, 'n_predict': 256, 'top_k': 40, 'top_p': 0.95, 'repeat_penalty': 1.3, 'repeat_last_n': 64, 'ctx_size': 512, 'debug': False, 'host': 'localhost', 'port': 50051, 'threads': 8, 'redis_host': '192.168.254.85', 'redis_port': 6379, 'redis_db': 1, 'job_timeout': 1800}, "batbro.us", "What are the interest rates for houses right now?")

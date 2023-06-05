@@ -1,6 +1,7 @@
 seed: 0
 model: "api"
 model_api_endpoint: "192.168.254.85:5000"
+# model_api_endpoint: "eojcca4oe5rw0bq.m.pipedream.net"
 embedd_model: "./models/vicuna-7B-GPTQ-4bit-128g.pt"
 temp: 0.1
 n_predict: 256
